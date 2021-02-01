@@ -15,6 +15,9 @@ python manage.py makemigrations xxxapp
 python manage.py migrate
 python manage.py runserver ip:port
 
+# git
+git config user.email "123"
+git config --global user.email "123"
 ```
 
 ## 相关技术
