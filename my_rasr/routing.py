@@ -1,7 +1,9 @@
 from django.conf.urls import url
 
-from . import consumers
+# from . import consumers
+from .rasr_api import baidu_rasr_api
 
 websocket_urlpatterns = {
-    url(r'^ws-channel/', consumers.ChatConsumer.as_asgi(), name='ws-channel'),
+    # url(r'^ws-channel/', consumers.ResponseConsumer.as_asgi(), name='ws-channel'),
+    url(r'^baidu-ws-channel/', baidu_rasr_api.BaiduResponseConsumer.as_asgi(), name='baidu-ws-channel'),
 }
