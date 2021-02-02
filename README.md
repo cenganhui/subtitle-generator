@@ -21,5 +21,6 @@ git config --global user.email "123"
 ```
 
 ## 相关技术
-- **百度实时语音识别API：**https://ai.baidu.com/ai-doc/SPEECH/2k5dllqxj
-- **Django：**https://www.django.cn/
+- **百度实时语音识别API：** https://ai.baidu.com/ai-doc/SPEECH/2k5dllqxj
+- **讯飞实时语音识别API：** https://www.xfyun.cn/doc/asr/rtasr/API.html
+- **Django：** https://www.django.cn/

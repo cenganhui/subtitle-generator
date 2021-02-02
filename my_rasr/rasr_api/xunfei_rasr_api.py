@@ -1,7 +1,11 @@
+import base64
+import hashlib
+import hmac
 import json
 import logging
 import threading
-import uuid
+import time
+from urllib.parse import quote
 
 import pyaudio
 import websocket
@@ -19,15 +23,18 @@ result = {}
 # ws断开连接标志
 disconnect_sign = False
 
-# 百度
+# 讯飞
 # 鉴权信息
-baidu_appid = 1
-baidu_appkey = ""
-# 语音模型，可以修改为其他语音模型测试
-baidu_dev_pid = 1
+xunfei_appid = ""
+xunfei_appkey = ""
+# 垂直领域个性化参数：法院: court 教育: edu 金融: finance 医疗: medical 科技: tech
+# 设置示例：pd="edu"参数pd为非必须设置，不设置参数默认为通用
+xunfei_pd = ""
+# 结束标志
+end_tag = "{\"end\": true}"
 
 
-class BaiduResponseConsumer(WebsocketConsumer):
+class XunfeiResponseConsumer(WebsocketConsumer):
     def connect(self):
         self.accept()
 
@@ -41,7 +48,7 @@ class BaiduResponseConsumer(WebsocketConsumer):
     def receive(self, text_data=None):
         global cycle_sign
         global response_sign
-        global baidu_appid, baidu_appkey, baidu_dev_pid
+        global xunfei_appid, xunfei_appkey, xunfei_pd
         text_data_json = json.loads(text_data)
         # print(text_data_json)
         message = process_message(text_data_json)
@@ -49,12 +56,12 @@ class BaiduResponseConsumer(WebsocketConsumer):
         # 若是201，获取鉴权信息，执行语音识别
         if message["code"] == 201:
             # 获取鉴权信息
-            baidu_appid = message["auth"]["appid"]
-            baidu_appkey = message["auth"]["appkey"]
-            baidu_dev_pid = message["auth"]["dev_pid"]
+            xunfei_appid = message["auth"]["appid"]
+            xunfei_appkey = message["auth"]["appkey"]
+            xunfei_pd = message["auth"]["pd"]
             # 开启线程调用识别方法
-            baidu_rasr_go_thread = threading.Thread(target=baidu_rasr_go)
-            baidu_rasr_go_thread.start()
+            xunfei_rasr_go_thread = threading.Thread(target=xunfei_rasr_go)
+            xunfei_rasr_go_thread.start()
             # 通知前端开始调用识别
             self.send(text_data=json.dumps(message))
 
@@ -87,39 +94,37 @@ class BaiduResponseConsumer(WebsocketConsumer):
 logger = logging.getLogger()  # 日志
 
 
-def send_start_params(ws):
+def initUri():
     """
-    开始参数帧
-    :param websocket.WebSocket ws:
-    :return:
+    创建请求uri
+    :return: uri
     """
-    req = {
-        "type": "START",
-        "data": {
-            "appid": int(baidu_appid),
-            "appkey": baidu_appkey,
-            "dev_pid": int(baidu_dev_pid),  # 识别模型
-            "cuid": uuid.uuid1().hex[-12:],  # 随便填不影响使用。机器的mac或者其它唯一id，百度计算UV用。
-            "sample": 16000,  # 固定参数
-            "format": 'pcm'  # 固定参数
-        }
-    }
-    body = json.dumps(req)
-    ws.send(body, websocket.ABNF.OPCODE_TEXT)
-    # logger.info("send START frame with params:" + body)
+    ts = str(int(time.time()))
+    tt = (xunfei_appid + ts).encode('utf-8')
+    md5 = hashlib.md5()
+    md5.update(tt)
+    baseString = md5.hexdigest()
+    baseString = bytes(baseString, encoding='utf-8')
+
+    apiKey = xunfei_appkey.encode('utf-8')
+    signa = hmac.new(apiKey, baseString, hashlib.sha1).digest()
+    signa = base64.b64encode(signa)
+    signa = str(signa, 'utf-8')
+    uri = my_rasr.const.XUNFEI_URL + "?appid=" + xunfei_appid + "&ts=" + ts + "&signa=" + quote(signa)
+    return uri
 
 
 def send_audio(ws):
     """
-    发送二进制音频数据，注意每个帧之间需要有间隔时间
-    :param websocket.WebSocket ws:
+    发送二进制音频数据
+    :param ws:
     :return:
     """
     global disconnect_sign
-    CHUNK = 1024  # 数据块大小
+    CHUNK = 1280  # 数据块大小
     FORMAT = pyaudio.paInt16  # 16bit编码格式
     CHANNELS = 1  # 单声道
-    RATE = 16000  # 16000采样频率
+    RATE = 16000  # 16000采样率
     RECORD_SECONDS = 30  # 录音时间
     p = pyaudio.PyAudio()
     # 创建音频流
@@ -146,49 +151,28 @@ def send_audio(ws):
 
 def send_finish(ws):
     """
-    发送结束帧
-    :param websocket.WebSocket ws:
+    发送结束标识
+    :param ws:
     :return:
     """
-    req = {
-        "type": "FINISH"
-    }
-    body = json.dumps(req)
-    ws.send(body, websocket.ABNF.OPCODE_TEXT)
-    # logger.info("send FINISH frame")
-
-
-def send_cancel(ws):
-    """
-    发送取消帧
-    :param websocket.WebSocket ws:
-    :return:
-    """
-    req = {
-        "type": "CANCEL"
-    }
-    body = json.dumps(req)
-    ws.send(body, websocket.ABNF.OPCODE_TEXT)
-    # logger.info("send CANCEL frame")
+    ws.send(bytes(end_tag.encode('utf-8')))
+    # print("send end tag success")
 
 
 def on_open(ws):
     """
-    连接后发送数据帧
-    :param websocket.WebSocket ws:
+    连接后发送数据
+    :param ws:
     :return:
     """
 
-    def run(*args):
+    def run():
         """
-        发送数据帧
-        :param args:
+        发送数据
         :return:
         """
-        send_start_params(ws)  # 开始帧
-        send_audio(ws)  # 中间帧
-        send_finish(ws)  # 结束帧
-        # logger.debug("thread terminating")
+        send_audio(ws)  # 音频数据
+        send_finish(ws)  # 结束标识
 
     threading.Thread(target=run).start()
 
@@ -197,27 +181,57 @@ def on_message(ws, message):
     """
     接收服务端返回的消息
     :param ws:
-    :param message: json 格式，可自行解析
+    :param message:
     :return:
     """
-    text_message = json.loads(message)
     global response_sign
     global result
-    # 若为一句话结束，则更新消息
-    if text_message['type'] == 'FIN_TEXT':
-        # logger.info("Response: " + text_message['result'])
-        res = {
-            "code": 202,
-            "msg": "server: sentence",
-            "result": text_message['result']
-        }
-        print("识别结果：" + text_message['result'])
-        response_sign = True
-        result = res
-        # ChatConsumer.send(text_data=json.dumps(res))
-    else:
-        response_sign = False
-    # logger.info("Response: " + message)
+    # 若返回为空，直接return
+    if len(message) == 0:
+        print("receive result end")
+        return
+
+    # 返回内容转字典并进行解析
+    result_dict = json.loads(message)
+    # 与服务器建立连接
+    if result_dict["action"] == "started":
+        print("handshake success, result: " + message)
+    # 服务器返回的识别内容
+    if result_dict["action"] == "result":
+        # 进一步解析
+        result_data_dict = json.loads(result_dict["data"])
+        result_data_seg_id = result_data_dict["seg_id"]
+        result_data_cn = result_data_dict["cn"]
+        result_data_cn_st = result_data_cn["st"]
+        result_data_cn_type = result_data_cn_st["type"]
+        result_data_cn_st_rt = result_data_cn_st["rt"]
+        # print(result_data_cn_type)
+        # 若识别内容为一句话结束，则拼接句子并更新消息
+        if int(result_data_cn_type) == 0:
+            sentence = ""
+            for item in result_data_cn_st_rt:
+                result_ws = item["ws"]
+                for ws in result_ws:
+                    result_cw = ws["cw"]
+                    for cw in result_cw:
+                        result_w = cw["w"]
+                        sentence += result_w
+                        # print(result_w)
+            res = {
+                "code": 202,
+                "msg": "server: sentence",
+                "result": sentence
+            }
+            print("识别结果：" + sentence)
+            response_sign = True
+            result = res
+        else:
+            response_sign = False
+    # 服务器返回错误，断开连接
+    if result_dict["action"] == "error":
+        print("rtasr error: " + message)
+        ws.close()
+        return
 
 
 def on_error(ws, error):
@@ -228,14 +242,10 @@ def on_error(ws, error):
     :return:
     """
     logger.error("error: " + str(error))
+    ws.close()
 
 
 def on_close(ws):
-    """
-    WebSocket 关闭
-    :param websocket.WebSocket ws:
-    :return:
-    """
     logger.info("ws close ...")
     ws.close()
     # 关闭时重置标志
@@ -247,17 +257,14 @@ def on_close(ws):
     result = {}
 
 
-def baidu_rasr_go():
+def xunfei_rasr_go():
     """
-    调用百度语音识别api
+    调用讯飞语音识别api
     :return:
     """
-    logging.basicConfig(format="[%(asctime)-15s] [%(funcName)s()][%(levelname)s] %(message)s")  # 设置日志打印格式
+    logging.basicConfig(format="[%(asctime)-15s] [%(funcName)s()][%(levelname)s] %(message)s")
     logger.setLevel(logging.INFO)  # 调整为logging.INFO，日志会少一点
-    # logger.info("begin")
-    # websocket.enableTrace(True)
-    # 拼接uri
-    uri = my_rasr.const.BAIDU_URI + "?sn=" + str(uuid.uuid1())
+    uri = initUri()
     # logger.info("uri is " + uri)
     ws_app = websocket.WebSocketApp(uri,
                                     on_open=on_open,  # 连接建立后的回调
