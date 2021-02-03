@@ -7,3 +7,6 @@ BAIDU_URI = "ws://vop.baidu.com/realtime_asr"
 
 # 讯飞url
 XUNFEI_URL = "ws://rtasr.xfyun.cn/v1/ws"
+
+# 有道url
+YOUDAO_URL = "wss://openapi.youdao.com/stream_asropenapi"

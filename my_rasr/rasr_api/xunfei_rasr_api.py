@@ -25,8 +25,8 @@ disconnect_sign = False
 
 # 讯飞
 # 鉴权信息
-xunfei_appid = ""
-xunfei_appkey = ""
+xunfei_app_id = ""
+xunfei_app_key = ""
 # 垂直领域个性化参数：法院: court 教育: edu 金融: finance 医疗: medical 科技: tech
 # 设置示例：pd="edu"参数pd为非必须设置，不设置参数默认为通用
 xunfei_pd = ""
@@ -48,7 +48,7 @@ class XunfeiResponseConsumer(WebsocketConsumer):
     def receive(self, text_data=None):
         global cycle_sign
         global response_sign
-        global xunfei_appid, xunfei_appkey, xunfei_pd
+        global xunfei_app_id, xunfei_app_key, xunfei_pd
         text_data_json = json.loads(text_data)
         # print(text_data_json)
         message = process_message(text_data_json)
@@ -56,8 +56,8 @@ class XunfeiResponseConsumer(WebsocketConsumer):
         # 若是201，获取鉴权信息，执行语音识别
         if message["code"] == 201:
             # 获取鉴权信息
-            xunfei_appid = message["auth"]["appid"]
-            xunfei_appkey = message["auth"]["appkey"]
+            xunfei_app_id = message["auth"]["app_id"]
+            xunfei_app_key = message["auth"]["app_key"]
             xunfei_pd = message["auth"]["pd"]
             # 开启线程调用识别方法
             xunfei_rasr_go_thread = threading.Thread(target=xunfei_rasr_go)
@@ -100,17 +100,17 @@ def initUri():
     :return: uri
     """
     ts = str(int(time.time()))
-    tt = (xunfei_appid + ts).encode('utf-8')
+    tt = (xunfei_app_id + ts).encode('utf-8')
     md5 = hashlib.md5()
     md5.update(tt)
     baseString = md5.hexdigest()
     baseString = bytes(baseString, encoding='utf-8')
 
-    apiKey = xunfei_appkey.encode('utf-8')
+    apiKey = xunfei_app_key.encode('utf-8')
     signa = hmac.new(apiKey, baseString, hashlib.sha1).digest()
     signa = base64.b64encode(signa)
     signa = str(signa, 'utf-8')
-    uri = my_rasr.const.XUNFEI_URL + "?appid=" + xunfei_appid + "&ts=" + ts + "&signa=" + quote(signa)
+    uri = my_rasr.const.XUNFEI_URL + "?appid=" + xunfei_app_id + "&ts=" + ts + "&signa=" + quote(signa)
     return uri
 
 
