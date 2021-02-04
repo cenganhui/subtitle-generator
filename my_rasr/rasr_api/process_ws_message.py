@@ -5,7 +5,6 @@ def process_message(text_data_json):
     :return: 返回给前端对应json
     """
     code = text_data_json["code"]
-    msg = text_data_json["msg"]
     # 200 表示前端请求连接ws
     if code == 200:
         message = {
@@ -19,6 +18,13 @@ def process_message(text_data_json):
             "code": 201,
             "msg": "server: rasr go!",
             "auth": text_data_json["auth"]
+        }
+        return message
+    # 202 表示前端请求获取识别内容
+    if code == 202:
+        message = {
+            "code": 202,
+            "msg": "server: sentence"
         }
         return message
     # 888 表示前端请求断开ws
@@ -37,6 +43,6 @@ def end_message():
     """
     message = {
         "code": 203,
-        "msg": "server: finish!"
+        "msg": "server: finished!"
     }
     return message

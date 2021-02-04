@@ -12,12 +12,10 @@ from channels.generic.websocket import WebsocketConsumer
 import my_rasr.const
 from .process_ws_message import process_message, end_message
 
-# 控制死循环标志
-cycle_sign = True
-# 控制消息更新标志
-response_sign = False
 # 消息
-result = {}
+result = ""
+# 识别结束标志
+finished_sign = False
 # ws断开连接标志
 disconnect_sign = False
 
@@ -31,18 +29,23 @@ youdao_lang_type = ""
 
 class YoudaoResponseConsumer(WebsocketConsumer):
     def connect(self):
+        # ws连接时设置
+        global finished_sign, disconnect_sign, result
+        finished_sign = False
+        disconnect_sign = False
+        result = ""
         self.accept()
 
     def disconnect(self, code):
-        global disconnect_sign
+        # ws断开后设置
+        global finished_sign, disconnect_sign
+        finished_sign = True
         disconnect_sign = True
         # print(code)
         # print("disconnect")
         # pass
 
     def receive(self, text_data=None):
-        global cycle_sign
-        global response_sign
         global youdao_app_key, youdao_app_secret, youdao_lang_type
         text_data_json = json.loads(text_data)
         # print(text_data_json)
@@ -59,24 +62,16 @@ class YoudaoResponseConsumer(WebsocketConsumer):
             youdao_rasr_go_thread.start()
             # 通知前端开始调用识别
             self.send(text_data=json.dumps(message))
-
-            def do_cycle():
-                """
-                循环判断消息更新并推送到前端
-                :return:
-                """
-                global cycle_sign
-                global response_sign
-                while cycle_sign:
-                    if response_sign:
-                        self.send(text_data=json.dumps(result))
-                        response_sign = False
-                cycle_sign = True
-                self.send(text_data=json.dumps(end_message()))
-
-            # 开启线程执行消息推送
-            do_cycle_thread = threading.Thread(target=do_cycle)
-            do_cycle_thread.start()
+        # 若是202，返回识别内容
+        elif message["code"] == 202:
+            message["result"] = result
+            # 如果识别结束，发送识别结束消息
+            if finished_sign:
+                res = end_message()
+                res["result"] = result
+                self.send(text_data=json.dumps(res))
+            else:
+                self.send(text_data=json.dumps(message))
         # 若是888，则断开ws
         elif message["code"] == 888:
             self.send(text_data=json.dumps(message))
@@ -128,11 +123,16 @@ def send_audio(ws):
     :return:
     """
     global disconnect_sign
+    global finished_sign
+    global result
+    disconnect_sign = False
+    finished_sign = False
+    result = ""
     CHUNK = 1600  # 数据块大小
     FORMAT = pyaudio.paInt16  # 16bit编码格式
     CHANNELS = 1  # 单声道
     RATE = 16000  # 16000采样率
-    RECORD_SECONDS = 60  # 录音时间
+    RECORD_SECONDS = 20  # 录音时间
     p = pyaudio.PyAudio()
     # 创建音频流
     stream = p.open(format=FORMAT,
@@ -148,7 +148,6 @@ def send_audio(ws):
             break
         data = stream.read(CHUNK)
         ws.send(data, websocket.ABNF.OPCODE_BINARY)
-    disconnect_sign = False
     print('*' * 10, '录音识别结束', '*' * 10)
 
     stream.stop_stream()
@@ -191,7 +190,6 @@ def on_message(ws, message):
     :param message:
     :return:
     """
-    global response_sign
     global result
     # 若返回为空，直接return
     if len(message) == 0:
@@ -211,18 +209,9 @@ def on_message(ws, message):
                 # 若识别内容为一句话结束，则拼接句子并更新消息
                 if result_st["type"] == 0:
                     sentence = result_st["sentence"]
-                    res = {
-                        "code": 202,
-                        "msg": "server: sentence",
-                        "result": sentence
-                    }
                     print("识别结果：" + sentence)
-                    response_sign = True
-                    result = res
-                else:
-                    response_sign = False
-        else:
-            response_sign = False
+                    # 拼接识别结果
+                    result += sentence
     # 服务器返回错误，断开连接
     if result_dict["action"] == "error":
         print("rtasr error: " + message)
@@ -239,18 +228,19 @@ def on_error(ws, error):
     """
     logger.error("error: " + str(error))
     ws.close()
+    # 关闭时重置标志
+    global finished_sign
+    # 识别结束
+    finished_sign = True
 
 
 def on_close(ws):
     logger.info("ws close ...")
     ws.close()
     # 关闭时重置标志
-    global cycle_sign
-    global response_sign
-    global result
-    cycle_sign = False
-    response_sign = False
-    result = {}
+    global finished_sign
+    # 识别结束
+    finished_sign = True
 
 
 def youdao_rasr_go():
