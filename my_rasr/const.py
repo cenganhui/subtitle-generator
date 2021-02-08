@@ -10,3 +10,6 @@ XUNFEI_URL = "ws://rtasr.xfyun.cn/v1/ws"
 
 # 有道url
 YOUDAO_URL = "wss://openapi.youdao.com/stream_asropenapi"
+
+# 腾讯url
+TENCENT_URL = "wss://asr.cloud.tencent.com/asr/v2/"
