@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import threading
 import time
 from urllib.parse import quote
@@ -13,6 +14,7 @@ from channels.generic.websocket import WebsocketConsumer
 
 import my_rasr.const
 from .process_ws_message import process_message, end_message
+from .realtime_noise_reduce import process_noise_data, np_audioop_rms
 
 # 消息
 result = ""
@@ -126,6 +128,16 @@ def send_audio(ws):
     CHANNELS = 1  # 单声道
     RATE = 16000  # 16000采样率
     RECORD_SECONDS = 20  # 录音时间
+
+    WIDTH = 2
+    THRESH = -55
+    NOISE_LEN = 16
+
+    noise = []
+
+    lThresh = time.time() - 1
+    avgQuiet = -60
+
     p = pyaudio.PyAudio()
     # 创建音频流
     stream = p.open(format=FORMAT,
@@ -140,6 +152,29 @@ def send_audio(ws):
         if disconnect_sign:
             break
         data = stream.read(CHUNK)
+
+        # process
+        level = np_audioop_rms(data, WIDTH)
+        if level:
+            level = 20 * math.log10(level) - 100
+        else:
+            level = -101
+
+        # gather the samples that represent noise
+        # always be updating in case of bad samples
+        if level < THRESH:
+            if time.time() - lThresh > 1:  # time to delay after the last time the threshold was reached before stopping transmission
+                avgQuiet = (avgQuiet * (
+                        NOISE_LEN - 1) + level) / NOISE_LEN  # moving average of the volume of the noise
+                if level < avgQuiet:
+                    noise.append(data)
+                    if len(noise) > NOISE_LEN:
+                        noise.pop(0)
+        else:
+            lThresh = time.time()
+
+        data = process_noise_data(CHUNK, data, noise)
+
         ws.send(data, websocket.ABNF.OPCODE_BINARY)
     print('*' * 10, '录音识别结束', '*' * 10)
 
