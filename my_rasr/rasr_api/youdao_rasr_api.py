@@ -55,6 +55,11 @@ class YoudaoResponseConsumer(WebsocketConsumer):
 
         # 若是201，获取鉴权信息，执行语音识别
         if message["code"] == 201:
+            # 执行语音识别前重置相关标志
+            global finished_sign, disconnect_sign, result
+            finished_sign = False
+            disconnect_sign = False
+            result = ""
             # 获取鉴权信息
             youdao_app_key = message["auth"]["app_key"]
             youdao_app_secret = message["auth"]["app_secret"]
@@ -134,7 +139,7 @@ def send_audio(ws):
     FORMAT = pyaudio.paInt16  # 16bit编码格式
     CHANNELS = 1  # 单声道
     RATE = 16000  # 16000采样率
-    RECORD_SECONDS = 20  # 录音时间
+    RECORD_SECONDS = 10  # 录音时间
 
     WIDTH = 2
     THRESH = -55
@@ -250,7 +255,12 @@ def on_message(ws, message):
     # 服务器返回错误，断开连接
     if result_dict["action"] == "error":
         print("rtasr error: " + message)
+        result = message
         ws.close()
+        # 关闭时重置标志
+        global finished_sign
+        # 识别结束
+        finished_sign = True
         return
 
 

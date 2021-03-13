@@ -63,6 +63,11 @@ class TencentResponseConsumer(WebsocketConsumer):
 
         # 若是201，获取鉴权信息，执行语音识别
         if message["code"] == 201:
+            # 执行语音识别前重置相关标志
+            global finished_sign, disconnect_sign, result
+            finished_sign = False
+            disconnect_sign = False
+            result = ""
             # 获取鉴权信息
             tencent_app_id = message["auth"]["app_id"]
             tencent_secret_id = message["auth"]["secret_id"]
@@ -185,7 +190,7 @@ def send_audio(ws):
     FORMAT = pyaudio.paInt16  # 16bit编码格式
     CHANNELS = 1  # 单声道
     RATE = 16000  # 16000采样率
-    RECORD_SECONDS = 20  # 录音时间
+    RECORD_SECONDS = 10  # 录音时间
 
     WIDTH = 2
     THRESH = -55
@@ -299,7 +304,12 @@ def on_message(ws, message):
                         result = sentence
     else:
         print(result_dict)
+        result = result_dict
         ws.close()
+        # 关闭时重置标志
+        global finished_sign
+        # 识别结束
+        finished_sign = True
         return
 
 

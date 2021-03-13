@@ -54,6 +54,11 @@ class BaiduResponseConsumer(WebsocketConsumer):
 
         # 若是201，获取鉴权信息，执行语音识别
         if message["code"] == 201:
+            # 执行语音识别前重置相关标志
+            global finished_sign, disconnect_sign, result
+            finished_sign = False
+            disconnect_sign = False
+            result = ""
             # 获取鉴权信息
             baidu_app_id = message["auth"]["app_id"]
             baidu_app_key = message["auth"]["app_key"]

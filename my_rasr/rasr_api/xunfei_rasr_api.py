@@ -60,6 +60,11 @@ class XunfeiResponseConsumer(WebsocketConsumer):
 
         # 若是201，获取鉴权信息，执行语音识别
         if message["code"] == 201:
+            # 执行语音识别前重置相关标志
+            global finished_sign, disconnect_sign, result
+            finished_sign = False
+            disconnect_sign = False
+            result = ""
             # 获取鉴权信息
             xunfei_app_id = message["auth"]["app_id"]
             xunfei_app_key = message["auth"]["app_key"]
@@ -256,7 +261,12 @@ def on_message(ws, message):
     # 服务器返回错误，断开连接
     if result_dict["action"] == "error":
         print("rtasr error: " + message)
+        result = message
         ws.close()
+        # 关闭时重置标志
+        global finished_sign
+        # 识别结束
+        finished_sign = True
         return
 
 
